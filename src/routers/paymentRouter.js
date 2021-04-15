@@ -12,17 +12,21 @@ const axiosInstance = axios.default.create({
   }
 });
 
-let transfer_code;
+// let transfer_code;
 
-/** Verify recipient account nummber and create transfer recipient */
-router.post("/verify", async (req, res) => {
-  console.log(req.body.account_number, req.body.bank_code, process.env.SECRET_KEY)
+router.get("/say/:greet", async (req, res) => {
+  const greeting = req.params.greet;
+  res.json(greeting);
+});
+
+/** Verify recipient account nummber */
+router.get("/verify", async (req, res) => {
+  // console.log(req.body.account_number, req.body.bank_code, process.env.SECRET_KEY)
   try {
-    //Verify recipient account number
     const verifyResBody = await axiosInstance.get("/bank/resolve", {
       params: {
-        account_number: req.body.account_number,
-        bank_code: req.body.bank_code
+        account_number: req.query.account_number,
+        bank_code: req.query.bank_code
       }
     });
 
@@ -31,13 +35,20 @@ router.post("/verify", async (req, res) => {
     };
 
     // console.log(verifyResBody);
+    res.json(verifyResBody.data);
+  } catch(e) {
+    res.status(500).send(e);
+  }
+});
 
-    //Create transfer recipient
+/** Create a transfer recipient and save recipient to DB */
+router.post("/transferrecipient", async (req, res) => {
+  try {
     const recipientResBody = await axiosInstance.post("/transferrecipient", {
       type: "nuban",
-      name: verifyResBody.data.data.account_name,
-      account_number: verifyResBody.data.data.account_number,
-      bank_code: req.body.bank_code,
+      name: req.query.acc_name,
+      account_number: req.query.acc_num,
+      bank_code: req.query.bank_code,
       currency: "NGN"
     }, {
       headers: {
@@ -50,6 +61,8 @@ router.post("/verify", async (req, res) => {
     if (!recipientResBody.status) {
       return res.status(400).send({ message: "Transfer recipient creation failed" });
     };
+
+    // res.json(recipientResBody.data);
 
     // Save recipient's code and details to DB
     const recipient = new Recipient({
@@ -67,17 +80,17 @@ router.post("/verify", async (req, res) => {
     const token = await recipient.GenerateAuthToken();
 
     // console.log(recipient);
-    res.status(200).json({ recipient: recipient, token: token });
-  } catch(e) {
+    res.status(200).json({ recipient: recipientResBody.data, token: token });
+  } catch (e) {
     res.status(500).send(e);
   }
 });
 
 router.post("/transfer", auth, async (req, res) => {
   const recipient = req.recipient_code;
-  const amount = Number(req.body.amount) * 100; // Convert to kobo
+  const amount = Number(req.query.amount) * 100; // Convert to kobo
   const source = "balance";
-  const reason = req.body.reason;
+  const reason = req.query.reason;
 
   console.log(recipient);
 
@@ -100,7 +113,6 @@ router.post("/transfer", auth, async (req, res) => {
       return res.status(400).send({ message: "Could not make a transfer" });
     }
 
-    transfer_code = transferResBody.data.transfer_code;
     res.json(transferResBody.data);
   } catch (e) {
     res.status(500).send(e);
@@ -108,8 +120,9 @@ router.post("/transfer", auth, async (req, res) => {
 });
 
 /**Finalize money transfer */
-router.post("/finalizeTransfer", auth, async (req, res) => {
-  const otp = req.body.otp;
+router.post("/finalizetransfer", auth, async (req, res) => {
+  const transfer_code = req.query.transfer_code;
+  const otp = req.query.otp;
 
   try {
     const transferResBody = await axiosInstance.post("/transfer/finalize_transfer", {
@@ -132,28 +145,29 @@ router.post("/finalizeTransfer", auth, async (req, res) => {
 });
 
 /** List Transfer History */
-router.post("ListTransfers", auth, async (req, res) => {
-  const customer_id = req.recipient._id;
+router.get("/transferhistory", auth, async (req, res) => {
+  // const customer_id = req.recipient._id;
 
   try {
-    const transfers = await axiosInstance.get(`transfer?customer`, {
-      params: {
-        customer: customer_id
-      }
-    });
+    const transfers = await axiosInstance.get(`transfer`);
+    // console.log(transfers);
 
     if (!transfers.status) {
       return res.status(404).send({ message: "No transfers found."});
     };
+
+    res.json(transfers.data);
   } catch (e) {
     res.status(500).send(e);
   }
 });
 
 /** Search Transfer History */
-router.post("searchTransfer", auth, async (req, res) => {
+router.get("/searchtransfer", auth, async (req, res) => {
+  const transfer_code = req.query.id_or_code;
   try {
-    const transfer = await axiosInstance.get(`transfer/:id_or_code`);
+    const transfer = await axiosInstance.get(`/transfer/${transfer_code}`);
+    console.log(transfer);
 
     if (!transfer.status) {
       return res.status(404).send({ message: "Transfer not found."});
