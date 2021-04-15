@@ -27,4 +27,4 @@ GET /transferhistory: is used to fetch the transfer history of a recipient
 
 GET /searchtransfer: is used to search for a specific transfer
 Query Params required:
-id_or_code
+- id_or_code
